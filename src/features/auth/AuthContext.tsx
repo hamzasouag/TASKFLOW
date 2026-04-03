@@ -1,7 +1,5 @@
-import { createContext, useContext, useReducer } from 'react';
-import type { ReactNode } from 'react';
-import { authReducer, initialState } from './authReducer';
-import type { AuthState, AuthAction } from './authReducer';
+import { createContext, useContext, useReducer, type ReactNode } from 'react';
+import { authReducer, initialState, type AuthState, type AuthAction } from './authReducer';
 interface AuthContextType {
 state: AuthState;
 dispatch: React.Dispatch<AuthAction>;
@@ -18,7 +16,7 @@ return (
 // Custom hook pour consommer le context
 export function useAuth() {
 const context = useContext(AuthContext);
-if (!context) {
+if (!context) { 
 throw new Error('useAuth doit être utilisé dans un AuthProvider');
 }
 return context;
