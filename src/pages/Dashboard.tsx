@@ -1,104 +1,53 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../features/auth/AuthContext';
-import api from '../api/axios';
-import axios from 'axios';
+import { useCallback, useState } from 'react';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import MainContent from '../components/MainContent';
+import { useProjects, type Project } from '../hooks/useProjects';
 import styles from './Dashboard.module.css';
 
-interface Project { id: string; name: string; color: string; }
-interface Column { id: string; title: string; tasks: string[]; }
-
 export default function Dashboard() {
-  const { state: authState, dispatch } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [columns, setColumns] = useState<Column[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { projects, columns, loading, saving, error, addProject, renameProject, deleteProject } =
+    useProjects();
 
-  // GET — charger les données au montage
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const [projRes, colRes] = await Promise.all([
-          api.get('/projects'),
-          api.get('/columns'),
-        ]);
-        setProjects(projRes.data);
-        setColumns(colRes.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
-
-  // ✅ B:helper pour éviter la répétition du catch
-  function handleApiError(err: unknown) {
-    if (axios.isAxiosError(err)) {
-      setError(err.response?.data?.message || `Erreur ${err.response?.status}`);
-    } else {
-      setError('Erreur inconnue');
-    }
-  }
-
-  // POST — ajouter un projet
-  async function addProject(name: string, color: string) {
-    setSaving(true);
-    setError(null);
-    try {
-      const { data } = await api.post('/projects', { name, color });
-      setProjects(prev => [...prev, data]);
-    } catch (err) {
-      handleApiError(err);   // B:remplacer le bloc catch répété
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // PUT — renommer un projet
-  async function renameProject(project: Project) {
+  const handleRename = useCallback(
+    async (project: Project) => {
     const newName = prompt('Nouveau nom :', project.name);
     if (!newName || newName === project.name) return;
 
-    setSaving(true);         // B
-    setError(null);          // B
     try {
-      const { data } = await api.put('/projects/' + project.id, { ...project, name: newName });
-      setProjects(prev =>
-        prev.map(p => (p.id === project.id ? data : p))
-      );
-    } catch (err) {
-      handleApiError(err);   // B
-
-    } finally {
-      setSaving(false);      // B
-
+      await renameProject(project.id, newName);
+    } catch {
+      // Error is already captured by the hook state.
     }
-  }
+    },
+    [renameProject],
+  );
 
-  // DELETE — supprimer un projet
-  async function deleteProject(id: string) {
+  const handleDelete = useCallback(
+    async (id: string) => {
     if (!confirm('Êtes-vous sûr ?')) return;
 
-    setSaving(true);         // B
-    setError(null);          // B
     try {
-      await api.delete('/projects/' + id);
-      setProjects(prev => prev.filter(p => p.id !== id));
-    } catch (err) {
-      handleApiError(err);   // B
-
-    } finally {
-      setSaving(false);      //  B
+      await deleteProject(id);
+    } catch {
+      // Error is already captured by the hook state.
     }
-  }
+    },
+    [deleteProject],
+  );
+
+  const handleCreateProject = useCallback(
+    async (name: string, color: string) => {
+      try {
+        await addProject(name, color);
+      } catch {
+        // Error is already captured by the hook state.
+      }
+    },
+    [addProject],
+  );
 
   if (loading) return <div className={styles.loading}>Chargement...</div>;
 
@@ -107,15 +56,13 @@ export default function Dashboard() {
       <Header
         title="TaskFlow"
         onMenuClick={() => setSidebarOpen(p => !p)}
-        userName={authState.user?.name}
-        onLogout={() => dispatch({ type: 'LOGOUT' })}
       />
       <div className={styles.body}>
         <Sidebar
           projects={projects}
           isOpen={sidebarOpen}
-          onRename={renameProject}
-          onDelete={deleteProject}
+          onRename={handleRename}
+          onDelete={handleDelete}
         />
         <div className={styles.content}>
           <div className={styles.toolbar}>
@@ -142,7 +89,7 @@ export default function Dashboard() {
                   const name = (form.elements.namedItem('name') as HTMLInputElement).value.trim();
                   const color = (form.elements.namedItem('color') as HTMLInputElement).value;
                   if (!name) return;
-                  addProject(name, color);
+                  void handleCreateProject(name, color);
                   setShowForm(false);
                 }}
               >

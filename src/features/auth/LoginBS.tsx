@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { useDispatch, useSelector } from 'react-redux';
 import api from '../../api/axios';
 import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
+import { loginFailure, loginStart, loginSuccess } from './authSlice';
+import type { AppDispatch, RootState } from '../../store';
 
 const LoginBS: React.FC = () => {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
 
-  // ✅ On destructure { state, dispatch } — exactement ce que useAuth() retourne
-  const { state, dispatch } = useAuth();
+  const dispatch = useDispatch<AppDispatch>();
+  const { user, loading, error } = useSelector((state: RootState) => state.auth);
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -17,30 +19,38 @@ const LoginBS: React.FC = () => {
 
  
   useEffect(() => {
-    if (state.user) {
+    if (user) {
       navigate(from, { replace: true });
     }
-  }, [state.user, navigate, from]);
+  }, [user, navigate, from]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Signale le début du chargement
-    dispatch({ type: 'LOGIN_START' });
+    dispatch(loginStart());
 
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const { data: users } = await api.get(`/users?email=${email}`);
+      if (users.length === 0 || users[0].password !== password) {
+        dispatch(loginFailure('Email ou mot de passe incorrect'));
+        return;
+      }
 
-      // ✅ Dispatch l'action de succès avec les données reçues
-      dispatch({ type: 'LOGIN_SUCCESS', payload: response.data });
+      const currentUser = users[0] as { id: string; email: string; name: string; role?: string; password: string };
+      const role = currentUser.role ?? (currentUser.email.includes('admin') ? 'admin' : 'member');
+      const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+      const fakeToken = btoa(
+        JSON.stringify({ userId: currentUser.id, email: currentUser.email, role, exp }),
+      );
 
-      navigate(from, { replace: true });
-    } catch (err: any) {
-      // ✅ Dispatch l'action d'erreur
-      dispatch({
-        type: 'LOGIN_FAILURE',
-        payload: err.response?.data?.message ?? 'Identifiants incorrects.',
-      });
+      const { password: _password, ...userPayload } = currentUser;
+      const authenticatedUser = { ...userPayload, role };
+
+      localStorage.setItem('taskflow_token', fakeToken);
+      localStorage.setItem('taskflow_user', JSON.stringify(authenticatedUser));
+      dispatch(loginSuccess({ user: authenticatedUser, token: fakeToken }));
+    } catch (err: unknown) {
+      dispatch(loginFailure('Identifiants incorrects.'));
     }
   };
 
@@ -54,10 +64,9 @@ const LoginBS: React.FC = () => {
           <h2 className="text-center fw-bold mb-1">TaskFlow</h2>
           <p className="text-center text-muted mb-4">Connectez-vous à votre espace</p>
 
-          {/* ✅ state.error vient du reducer */}
-          {state.error && (
+          {error && (
             <Alert variant="danger" className="py-2">
-              {state.error}
+              {error}
             </Alert>
           )}
 
@@ -86,14 +95,13 @@ const LoginBS: React.FC = () => {
               />
             </Form.Group>
 
-            {/* ✅ state.loading vient du reducer */}
             <Button
               variant="primary"
               type="submit"
               className="w-100"
-              disabled={state.loading}
+              disabled={loading}
             >
-              {state.loading ? (
+              {loading ? (
                 <>
                   <span
                     className="spinner-border spinner-border-sm me-2"
